@@ -1,6 +1,8 @@
 # weft 🪢
 
-A vim-like terminal reader to chat with your books.
+A vim-like terminal reader to chat with your books
+
+<https://x.com/dpunjabi/status/1854361314040446995>
 
 ## Features
 
@@ -18,7 +20,7 @@ A vim-like terminal reader to chat with your books.
 - `r` - Listen text
 - `>` - Listen to the compass
 
-Built on Simon Willison's [LLM](https://github.com/simonw/llm) to interface with OpenAI, Anthropic, and other providers.
+Uses [LLM](https://github.com/simonw/llm) to interface with OpenAI, Anthropic, and other providers.
 
 ## Getting started
 
