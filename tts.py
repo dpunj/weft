@@ -1,7 +1,10 @@
 import os
+import dotenv
 from io import BytesIO
 from elevenlabs import play, VoiceSettings
 from elevenlabs.client import ElevenLabs
+
+dotenv.load_dotenv()
 
 client = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
 
