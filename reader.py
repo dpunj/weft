@@ -19,7 +19,7 @@ console = Console()
 class Reader:
     def __init__(self, epub_path: str):
         self.book = epub.read_epub(epub_path)
-        self.model = llm.get_model("claude-3-5-haiku-latest")
+        self.model = llm.get_model("gpt-4o-mini")
         self.sections = self._process_sections()
         self.current_index = self.current_page = 0
         self.pages = []
