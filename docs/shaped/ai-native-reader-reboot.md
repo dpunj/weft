@@ -162,7 +162,8 @@ The web UI includes:
 - dark modern reader shell
 - TOC sidebar
 - Markdown rendering via `marked`
-- vim keys: `j/k`, `h/l`, `g/G`, `t`
+- vim keys: `j/k`, `ctrl+d/ctrl+u`, `h/l`, `g/G`, `t`
+- block-level cursor over actual passages
 - page/section progress
 
 ### First recrsv-style exploration rail
@@ -343,11 +344,18 @@ With stable anchors, Weft can do:
 
 Goal: make EPUB navigation feel less prototype-y.
 
+Already started:
+
+- render block ids as data attributes
+- add current block tracking in the web reader
+- make `j/k` move through actual passages/blocks rather than browser scroll
+- keep `ctrl+d/ctrl+u` for page movement
+
+Still needed:
+
 - Use EPUB nav/NCX for TOC when available
 - improve section titles
 - skip obvious cover-only sections
-- render block ids as hidden data attributes
-- add current block tracking in the web reader
 
 Demo:
 

@@ -32,6 +32,7 @@ Weft should stay small and sharp, but grow a real document spine:
 - **Reader-native AI tools** — `toc`, `current_location`, `get_section`, `search_text`, and eventually `repl_exec` over book blocks
 - **Visible AI navigation** — show the reader what the model inspected, inspired by `recrsv`'s long-document exploration
 - **Recrsv-style exploration rail** — web preview includes `toc`, `search_text`, and `context_get` slices so you can watch document tools move through the book
+- **Block-level vim motion** — `j/k` moves through actual passages/blocks, while `ctrl+d/ctrl+u` turns pages
 
 ## Getting started
 

@@ -196,8 +196,16 @@ function pagesFor(section: Section): Block[][] {
 }
 
 function renderBlocks(blocks: Block[]): string {
-  const markdown = blocks.map((block) => block.markdown).join("\n\n");
-  return marked.parse(markdown, { async: false });
+  return blocks
+    .map((block) => {
+      const html = marked.parse(block.markdown, { async: false });
+      return `<section class="weft-block" data-block-id="${escapeAttribute(block.id)}"><div class="block-meta">${block.id}</div>${html}</section>`;
+    })
+    .join("\n");
+}
+
+function escapeAttribute(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 }
 
 function jsonResponse(payload: unknown): Response {
@@ -266,7 +274,8 @@ function indexHtml(): string {
         <div class="rlm-timeline" id="rlm-timeline"></div>
       </section>
       <footer>
-        <span><kbd>j</kbd>/<kbd>k</kbd> page</span>
+        <span><kbd>j</kbd>/<kbd>k</kbd> block</span>
+        <span><kbd>ctrl+d</kbd>/<kbd>ctrl+u</kbd> page</span>
         <span><kbd>h</kbd>/<kbd>l</kbd> section</span>
         <span><kbd>g</kbd>/<kbd>G</kbd> ends</span>
         <span><kbd>t</kbd> TOC</span>
@@ -281,7 +290,7 @@ function indexHtml(): string {
 
 function clientScript(): string {
   return String.raw`
-const state = { section: 0, page: 0, tocOpen: true, summary: null };
+const state = { section: 0, page: 0, block: 0, pageBlockIds: [], tocOpen: true, summary: null };
 const els = {
   toc: document.getElementById("toc"),
   title: document.getElementById("book-title"),
@@ -308,14 +317,18 @@ async function renderPage() {
   const page = await fetchJson("/api/page?section=" + state.section + "&page=" + state.page);
   state.section = page.sectionIndex;
   state.page = page.pageIndex;
+  state.pageBlockIds = page.blockIds;
   els.sectionTitle.textContent = page.sectionTitle;
-  els.position.textContent = "section " + (page.sectionIndex + 1) + "/" + page.sectionCount + " · page " + (page.pageIndex + 1) + "/" + page.pageCount;
   els.meter.style.width = Math.round(((page.sectionIndex + page.pageIndex / page.pageCount) / page.sectionCount) * 100) + "%";
   els.page.innerHTML = page.html;
+  els.page.querySelectorAll(".weft-block").forEach((block, index) => {
+    block.addEventListener("click", () => activateBlock(index));
+  });
   document.querySelectorAll("#toc button").forEach((button) => {
     button.classList.toggle("active", Number(button.dataset.index) === state.section);
   });
-  window.scrollTo({ top: 0, behavior: "instant" });
+  state.block = clampIndex(state.block, state.pageBlockIds.length);
+  activateBlock(state.block, false);
 }
 
 function renderToc() {
@@ -331,23 +344,56 @@ function renderToc() {
     button.addEventListener("click", async () => {
       state.section = Number(button.dataset.index);
       state.page = 0;
+      state.block = 0;
       await renderPage();
     });
   });
 }
 
-async function movePage(delta) {
-  state.page += delta;
+async function moveBlock(delta) {
+  const next = state.block + delta;
+  if (next >= 0 && next < state.pageBlockIds.length) {
+    activateBlock(next);
+    return;
+  }
+  await movePage(delta > 0 ? 1 : -1, delta < 0);
+}
+
+async function movePage(delta, end = false) {
   const before = state.page;
+  state.page += delta;
+  state.block = end ? 9999 : 0;
   await renderPage();
-  if (before === state.page && delta > 0) await moveSection(1);
-  if (before === state.page && delta < 0) await moveSection(-1, true);
+  if (before === state.page && delta > 0) {
+    if (state.section < state.summary.sections.length - 1) await moveSection(1);
+    else activateBlock(state.pageBlockIds.length - 1);
+  }
+  if (before === state.page && delta < 0) {
+    if (state.section > 0) await moveSection(-1, true);
+    else activateBlock(0);
+  }
 }
 
 async function moveSection(delta, end = false) {
   state.section = Math.max(0, Math.min(state.summary.sections.length - 1, state.section + delta));
   state.page = end ? 9999 : 0;
+  state.block = end ? 9999 : 0;
   await renderPage();
+}
+
+function activateBlock(index, scroll = true) {
+  state.block = clampIndex(index, state.pageBlockIds.length);
+  const blocks = Array.from(els.page.querySelectorAll(".weft-block"));
+  blocks.forEach((block, blockIndex) => block.classList.toggle("active", blockIndex === state.block));
+  const active = blocks[state.block];
+  const blockId = state.pageBlockIds[state.block] || "—";
+  els.position.textContent = "section " + (state.section + 1) + "/" + state.summary.sections.length + " · page " + (state.page + 1) + " · block " + blockId;
+  if (scroll && active) active.scrollIntoView({ block: "center", behavior: "smooth" });
+}
+
+function clampIndex(index, length) {
+  if (length <= 0) return 0;
+  return Math.max(0, Math.min(index, length - 1));
 }
 
 function toggleToc() {
@@ -369,12 +415,14 @@ els.prevSection.addEventListener("click", () => moveSection(-1));
 els.nextSection.addEventListener("click", () => moveSection(1));
 window.addEventListener("keydown", (event) => {
   if (["INPUT", "TEXTAREA"].includes(event.target?.tagName)) return;
-  if (event.key === "j") { event.preventDefault(); movePage(1); }
-  if (event.key === "k") { event.preventDefault(); movePage(-1); }
+  if (event.ctrlKey && event.key === "d") { event.preventDefault(); movePage(1); return; }
+  if (event.ctrlKey && event.key === "u") { event.preventDefault(); movePage(-1, true); return; }
+  if (event.key === "j") { event.preventDefault(); moveBlock(1); }
+  if (event.key === "k") { event.preventDefault(); moveBlock(-1); }
   if (event.key === "h") { event.preventDefault(); moveSection(-1); }
   if (event.key === "l") { event.preventDefault(); moveSection(1); }
-  if (event.key === "g") { event.preventDefault(); state.section = 0; state.page = 0; renderPage(); }
-  if (event.key === "G") { event.preventDefault(); state.section = state.summary.sections.length - 1; state.page = 9999; renderPage(); }
+  if (event.key === "g") { event.preventDefault(); state.section = 0; state.page = 0; state.block = 0; renderPage(); }
+  if (event.key === "G") { event.preventDefault(); state.section = state.summary.sections.length - 1; state.page = 9999; state.block = 9999; renderPage(); }
   if (event.key === "t") { event.preventDefault(); toggleToc(); }
 });
 
@@ -527,6 +575,39 @@ h1 { margin: 0; font-size: clamp(1.6rem, 3vw, 3.4rem); letter-spacing: -0.05em; 
   font-size: clamp(1.08rem, 1.5vw, 1.28rem);
   line-height: 1.78;
 }
+.weft-block {
+  position: relative;
+  margin: 0.25rem -1.2rem;
+  padding: 0.1rem 1.2rem;
+  border-radius: 1rem;
+  border: 1px solid transparent;
+  transition: background 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
+}
+.weft-block.active {
+  background: rgba(119,231,255,0.065);
+  border-color: rgba(119,231,255,0.18);
+  box-shadow: 0 0 0 1px rgba(119,231,255,0.04), 0 18px 60px rgba(0,0,0,0.18);
+}
+.weft-block.active::before {
+  content: "";
+  position: absolute;
+  left: 0.35rem;
+  top: 0.85rem;
+  bottom: 0.85rem;
+  width: 2px;
+  border-radius: 999px;
+  background: linear-gradient(var(--cyan), var(--blue));
+}
+.block-meta {
+  height: 0;
+  overflow: visible;
+  transform: translateY(-1.35rem);
+  color: var(--dim);
+  font: 0.68rem/1 ui-monospace, Menlo, monospace;
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+.weft-block.active .block-meta { opacity: 1; }
 .markdown-body h1, .markdown-body h2, .markdown-body h3 {
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
   line-height: 1.08;
