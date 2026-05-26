@@ -370,7 +370,7 @@ async function movePage(delta, end = false) {
     else activateBlock(state.pageBlockIds.length - 1);
   }
   if (before === state.page && delta < 0) {
-    if (state.section > 0) await moveSection(-1, true);
+    if (state.section > 0) await moveSection(-1, end);
     else activateBlock(0);
   }
 }
@@ -418,7 +418,7 @@ els.nextSection.addEventListener("click", () => moveSection(1));
 window.addEventListener("keydown", (event) => {
   if (["INPUT", "TEXTAREA"].includes(event.target?.tagName)) return;
   if ((event.ctrlKey && event.key === "d") || event.key === "d") { event.preventDefault(); movePage(1); return; }
-  if ((event.ctrlKey && event.key === "u") || event.key === "u") { event.preventDefault(); movePage(-1, true); return; }
+  if ((event.ctrlKey && event.key === "u") || event.key === "u") { event.preventDefault(); movePage(-1); return; }
   if (event.key === "j") { event.preventDefault(); moveBlock(1); }
   if (event.key === "k") { event.preventDefault(); moveBlock(-1); }
   if (event.key === "h") { event.preventDefault(); moveSection(-1); }
