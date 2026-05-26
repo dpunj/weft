@@ -357,20 +357,20 @@ async function moveBlock(delta) {
     activateBlock(next);
     return;
   }
-  await movePage(delta > 0 ? 1 : -1, delta < 0);
+  await movePage(delta > 0 ? 1 : -1, delta < 0, true);
 }
 
-async function movePage(delta, end = false) {
+async function movePage(delta, end = false, crossSection = false) {
   const before = state.page;
   state.page += delta;
   state.block = end ? 9999 : 0;
   await renderPage();
   if (before === state.page && delta > 0) {
-    if (state.section < state.summary.sections.length - 1) await moveSection(1);
+    if (crossSection && state.section < state.summary.sections.length - 1) await moveSection(1);
     else activateBlock(state.pageBlockIds.length - 1);
   }
   if (before === state.page && delta < 0) {
-    if (state.section > 0) await moveSection(-1, end);
+    if (crossSection && state.section > 0) await moveSection(-1, end);
     else activateBlock(0);
   }
 }
