@@ -329,7 +329,7 @@ async function renderPage() {
     button.classList.toggle("active", Number(button.dataset.index) === state.section);
   });
   state.block = clampIndex(state.block, state.pageBlockIds.length);
-  activateBlock(state.block, false);
+  activateBlock(state.block);
 }
 
 function renderToc() {
