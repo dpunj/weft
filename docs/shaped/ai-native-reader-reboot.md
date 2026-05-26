@@ -162,7 +162,7 @@ The web UI includes:
 - dark modern reader shell
 - TOC sidebar
 - Markdown rendering via `marked`
-- vim keys: `j/k`, `ctrl+d/ctrl+u`, `h/l`, `g/G`, `t`
+- vim keys: `j/k`, `d/u`, `ctrl+d/ctrl+u`, `h/l`, `g/G`, `t`
 - block-level cursor over actual passages
 - page/section progress
 
@@ -349,7 +349,7 @@ Already started:
 - render block ids as data attributes
 - add current block tracking in the web reader
 - make `j/k` move through actual passages/blocks rather than browser scroll
-- keep `ctrl+d/ctrl+u` for page movement
+- add `d/u` for page movement, with `ctrl+d/ctrl+u` kept as extra muscle memory
 
 Still needed:
 

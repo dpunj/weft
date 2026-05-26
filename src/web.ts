@@ -199,7 +199,7 @@ function renderBlocks(blocks: Block[]): string {
   return blocks
     .map((block) => {
       const html = marked.parse(block.markdown, { async: false });
-      return `<section class="weft-block" data-block-id="${escapeAttribute(block.id)}"><div class="block-meta">${block.id}</div>${html}</section>`;
+      return `<section class="weft-block" data-block-id="${escapeAttribute(block.id)}" tabindex="0" aria-label="Reading block ${escapeAttribute(block.id)}"><div class="block-meta">${block.id}</div>${html}</section>`;
     })
     .join("\n");
 }
@@ -250,12 +250,12 @@ function indexHtml(): string {
       </header>
       <section class="reader-shell">
         <div class="section-bar">
-          <button id="prev-section" title="h / previous section">←</button>
+          <button id="prev-section" title="h / previous section" aria-label="Previous section">←</button>
           <div>
             <p class="label">current section</p>
             <h2 id="section-title">—</h2>
           </div>
-          <button id="next-section" title="l / next section">→</button>
+          <button id="next-section" title="l / next section" aria-label="Next section">→</button>
         </div>
         <article id="page" class="markdown-body"></article>
       </section>
@@ -275,7 +275,7 @@ function indexHtml(): string {
       </section>
       <footer>
         <span><kbd>j</kbd>/<kbd>k</kbd> block</span>
-        <span><kbd>ctrl+d</kbd>/<kbd>ctrl+u</kbd> page</span>
+        <span><kbd>d</kbd>/<kbd>u</kbd> page</span>
         <span><kbd>h</kbd>/<kbd>l</kbd> section</span>
         <span><kbd>g</kbd>/<kbd>G</kbd> ends</span>
         <span><kbd>t</kbd> TOC</span>
@@ -323,6 +323,7 @@ async function renderPage() {
   els.page.innerHTML = page.html;
   els.page.querySelectorAll(".weft-block").forEach((block, index) => {
     block.addEventListener("click", () => activateBlock(index));
+    block.addEventListener("focus", () => activateBlock(index, false));
   });
   document.querySelectorAll("#toc button").forEach((button) => {
     button.classList.toggle("active", Number(button.dataset.index) === state.section);
@@ -388,6 +389,7 @@ function activateBlock(index, scroll = true) {
   const active = blocks[state.block];
   const blockId = state.pageBlockIds[state.block] || "—";
   els.position.textContent = "section " + (state.section + 1) + "/" + state.summary.sections.length + " · page " + (state.page + 1) + " · block " + blockId;
+  if (active && document.activeElement !== active) active.focus({ preventScroll: true });
   if (scroll && active) active.scrollIntoView({ block: "center", behavior: "smooth" });
 }
 
@@ -415,8 +417,8 @@ els.prevSection.addEventListener("click", () => moveSection(-1));
 els.nextSection.addEventListener("click", () => moveSection(1));
 window.addEventListener("keydown", (event) => {
   if (["INPUT", "TEXTAREA"].includes(event.target?.tagName)) return;
-  if (event.ctrlKey && event.key === "d") { event.preventDefault(); movePage(1); return; }
-  if (event.ctrlKey && event.key === "u") { event.preventDefault(); movePage(-1, true); return; }
+  if ((event.ctrlKey && event.key === "d") || event.key === "d") { event.preventDefault(); movePage(1); return; }
+  if ((event.ctrlKey && event.key === "u") || event.key === "u") { event.preventDefault(); movePage(-1, true); return; }
   if (event.key === "j") { event.preventDefault(); moveBlock(1); }
   if (event.key === "k") { event.preventDefault(); moveBlock(-1); }
   if (event.key === "h") { event.preventDefault(); moveSection(-1); }
@@ -434,6 +436,7 @@ boot().catch((error) => {
 
 function styles(): string {
   return String.raw`
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@450;550;650;750&family=Newsreader:opsz,wght@6..72,400..700&display=swap");
 :root {
   color-scheme: dark;
   --bg: #07090d;
@@ -448,6 +451,9 @@ function styles(): string {
   --green: #a7f3d0;
   --gold: #f6d365;
   --max-reader: 880px;
+  --font-ui: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-reader: Newsreader, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --font-mono: "SF Mono", ui-monospace, Menlo, monospace;
 }
 * { box-sizing: border-box; }
 body {
@@ -458,7 +464,7 @@ body {
     radial-gradient(circle at bottom right, rgba(122,167,255,0.13), transparent 38rem),
     linear-gradient(135deg, #07090d 0%, #0c111b 48%, #071018 100%);
   color: var(--text);
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: var(--font-ui);
 }
 #app {
   display: grid;
@@ -571,9 +577,10 @@ h1 { margin: 0; font-size: clamp(1.6rem, 3vw, 3.4rem); letter-spacing: -0.05em; 
   max-width: var(--max-reader);
   margin: 0 auto;
   padding: clamp(1.5rem, 4vw, 4.5rem);
-  font-family: ui-serif, Georgia, Cambria, "Times New Roman", serif;
-  font-size: clamp(1.08rem, 1.5vw, 1.28rem);
-  line-height: 1.78;
+  font-family: var(--font-reader);
+  font-size: clamp(1.13rem, 1.45vw, 1.34rem);
+  line-height: 1.74;
+  font-variation-settings: "opsz" 24;
 }
 .weft-block {
   position: relative;
@@ -581,12 +588,21 @@ h1 { margin: 0; font-size: clamp(1.6rem, 3vw, 3.4rem); letter-spacing: -0.05em; 
   padding: 0.1rem 1.2rem;
   border-radius: 1rem;
   border: 1px solid transparent;
-  transition: background 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
+  cursor: pointer;
+  outline: none;
+  transition: transform 140ms ease, background 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
+}
+.weft-block:hover,
+.weft-block:focus-visible {
+  transform: translateY(-1px);
+  background: rgba(255,255,255,0.035);
+  border-color: rgba(255,255,255,0.11);
+  box-shadow: 0 14px 44px rgba(0,0,0,0.14);
 }
 .weft-block.active {
-  background: rgba(119,231,255,0.065);
-  border-color: rgba(119,231,255,0.18);
-  box-shadow: 0 0 0 1px rgba(119,231,255,0.04), 0 18px 60px rgba(0,0,0,0.18);
+  background: linear-gradient(135deg, rgba(119,231,255,0.092), rgba(122,167,255,0.052));
+  border-color: rgba(119,231,255,0.22);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 18px 60px rgba(0,0,0,0.18);
 }
 .weft-block.active::before {
   content: "";
@@ -603,20 +619,21 @@ h1 { margin: 0; font-size: clamp(1.6rem, 3vw, 3.4rem); letter-spacing: -0.05em; 
   overflow: visible;
   transform: translateY(-1.35rem);
   color: var(--dim);
-  font: 0.68rem/1 ui-monospace, Menlo, monospace;
+  font: 0.68rem/1 var(--font-mono);
   opacity: 0;
   transition: opacity 140ms ease;
 }
 .weft-block.active .block-meta { opacity: 1; }
 .markdown-body h1, .markdown-body h2, .markdown-body h3 {
-  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
-  line-height: 1.08;
-  letter-spacing: -0.045em;
+  font-family: var(--font-reader);
+  line-height: 1.05;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
 }
 .markdown-body h1 { font-size: clamp(2.1rem, 4vw, 4.2rem); }
 .markdown-body h2 { font-size: clamp(1.7rem, 3vw, 2.7rem); margin-top: 2em; }
 .markdown-body h3 { font-size: 1.35rem; margin-top: 1.8em; }
-.markdown-body p { margin: 1.05em 0; }
+.markdown-body p { margin: 1.05em 0; text-wrap: pretty; }
 .markdown-body a { color: var(--cyan); }
 .markdown-body blockquote {
   margin: 1.6em 0;
@@ -627,7 +644,7 @@ h1 { margin: 0; font-size: clamp(1.6rem, 3vw, 3.4rem); letter-spacing: -0.05em; 
   border-radius: 0 1rem 1rem 0;
 }
 .markdown-body code {
-  font-family: "SF Mono", ui-monospace, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 0.88em;
   color: var(--green);
   background: rgba(0,0,0,0.32);
@@ -684,7 +701,7 @@ h1 { margin: 0; font-size: clamp(1.6rem, 3vw, 3.4rem); letter-spacing: -0.05em; 
   border-bottom: 1px solid var(--border);
   color: var(--muted);
   font-size: 0.84rem;
-  font-family: ui-monospace, Menlo, monospace;
+  font-family: var(--font-mono);
 }
 .rlm-timeline {
   display: grid;
@@ -714,7 +731,7 @@ h1 { margin: 0; font-size: clamp(1.6rem, 3vw, 3.4rem); letter-spacing: -0.05em; 
   margin: 0;
   white-space: pre-wrap;
   color: #c8d3e5;
-  font: 0.82rem/1.55 ui-monospace, Menlo, monospace;
+  font: 0.82rem/1.55 var(--font-mono);
 }
 footer {
   display: flex;
@@ -734,7 +751,7 @@ kbd {
   padding: 0.05rem 0.32rem;
   background: var(--panel);
   color: var(--text);
-  font-family: ui-monospace, Menlo, monospace;
+  font-family: var(--font-mono);
 }
 @media (max-width: 820px) {
   #app { grid-template-columns: 1fr; }
