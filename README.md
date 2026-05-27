@@ -50,6 +50,12 @@ bun run web path/to/book.epub
 # then open http://localhost:4173
 ```
 
+You can also point Weft at Gutenberg HTML URLs. Source page anchors like `#Page_100` are preserved and used as source-page coordinates:
+
+```bash
+bun run web 'https://www.gutenberg.org/files/56852/56852-h/56852-h.htm#Page_100'
+```
+
 Or use the minimal terminal reader:
 
 ```bash

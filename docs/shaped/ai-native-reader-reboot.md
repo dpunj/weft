@@ -131,7 +131,7 @@ bun run web panama.epub
 
 ### Document spine
 
-`src/document.ts` parses EPUBs into:
+`src/document.ts` parses EPUBs and Gutenberg-style HTML into:
 
 ```text
 WeftDocument
@@ -148,6 +148,13 @@ Current EPUB path:
 - convert HTML to Markdown with `turndown`
 - split into blocks
 - assign ids like `s11.b96`
+
+Current HTML/Gutenberg path:
+
+- load local `.html`/`.htm` or remote `https://...htm` sources
+- preserve Gutenberg anchors like `#Page_100`
+- attach source page numbers/selectors to block `sourceSpan`
+- open directly near a URL hash when it maps to a preserved source page
 
 ### Modern Markdown web reader
 
@@ -166,6 +173,7 @@ The web UI includes:
 - global reading tape for page turns across the book
 - block-level cursor over actual passages
 - book / section / page progress with estimated time remaining
+- source-page coordinates when present, e.g. Gutenberg `Page_100`
 
 ### First recrsv-style exploration rail
 

@@ -7,6 +7,7 @@ import { loadDocument } from "./document";
 interface BlockStat {
   id: string;
   words: number;
+  sourcePage?: number;
 }
 
 interface PagePayload {
@@ -55,6 +56,7 @@ const sectionWordCounts = document.sections.map((section) =>
 );
 const readingPages = buildReadingPages();
 const totalWords = sectionWordCounts.reduce((sum, words) => sum + words, 0);
+const initialPageIndex = initialPageIndexForSourceAnchor(sourcePath);
 
 Bun.serve({
   port,
@@ -81,6 +83,7 @@ function documentSummary() {
     pageCount: readingPages.length,
     wordCount: totalWords,
     estimatedMinutes: minutesForWords(totalWords),
+    initialPageIndex,
     sections: document.sections.map((section, index) => ({
       id: section.id,
       title: section.title,
@@ -112,7 +115,7 @@ function pageFromUrl(url: URL): PagePayload {
     sectionPageCount: sectionPages[page.sectionIndex]?.length ?? 1,
     html: renderBlocks(page.blocks),
     blockIds: page.blocks.map((block) => block.id),
-    blockStats: page.blocks.map((block) => ({ id: block.id, words: countWords(block.plainText) })),
+    blockStats: page.blocks.map((block) => ({ id: block.id, words: countWords(block.plainText), sourcePage: block.sourceSpan.page })),
     wordStats: {
       totalWords,
       sectionWords: sectionWordCounts[page.sectionIndex] ?? page.wordCount,
@@ -151,6 +154,16 @@ function buildReadingPages(): ReadingPage[] {
 function firstPageIndexForSection(sectionIndex: number): number {
   const target = clamp(sectionIndex, 0, document.sections.length - 1);
   const index = readingPages.findIndex((page) => page.sectionIndex === target);
+  return index >= 0 ? index : 0;
+}
+
+function initialPageIndexForSourceAnchor(sourcePath: string): number {
+  const selector = sourcePath.match(/#(.+)$/)?.[1];
+  if (!selector) return 0;
+  const decodedSelector = decodeURIComponent(selector);
+  const index = readingPages.findIndex((page) =>
+    page.blocks.some((block) => block.sourceSpan.selector === decodedSelector),
+  );
   return index >= 0 ? index : 0;
 }
 
@@ -280,7 +293,8 @@ function renderBlocks(blocks: Block[]): string {
   return blocks
     .map((block) => {
       const html = marked.parse(block.markdown, { async: false });
-      return `<section class="weft-block" data-block-id="${escapeAttribute(block.id)}" tabindex="0" aria-label="Reading block ${escapeAttribute(block.id)}"><div class="block-meta">${block.id}</div>${html}</section>`;
+      const sourcePage = block.sourceSpan.page ? ` · source p.${block.sourceSpan.page}` : "";
+      return `<section class="weft-block" data-block-id="${escapeAttribute(block.id)}" tabindex="0" aria-label="Reading block ${escapeAttribute(block.id)}"><div class="block-meta">${block.id}${sourcePage}</div>${html}</section>`;
     })
     .join("\n");
 }
@@ -400,6 +414,7 @@ const els = {
 
 async function boot() {
   state.summary = await fetchJson("/api/document");
+  state.page = state.summary.initialPageIndex || 0;
   els.title.textContent = state.summary.title;
   renderToc();
   await renderPage();
