@@ -163,8 +163,9 @@ The web UI includes:
 - TOC sidebar
 - Markdown rendering via `marked`
 - vim keys: `j/k`, `d/u`, `ctrl+d/ctrl+u`, `h/l`, `g/G`, `t`
+- global reading tape for page turns across the book
 - block-level cursor over actual passages
-- page/section progress
+- book / section / page progress with estimated time remaining
 
 ### First recrsv-style exploration rail
 
@@ -350,6 +351,8 @@ Already started:
 - add current block tracking in the web reader
 - make `j/k` move through actual passages/blocks rather than browser scroll
 - add `d/u` for page movement, with `ctrl+d/ctrl+u` kept as extra muscle memory
+- refactor page turns around a global reading tape instead of section-local pages
+- add minimal book / section / page progress and ETA based on cursor position
 
 Still needed:
 

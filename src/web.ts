@@ -4,6 +4,11 @@ import { marked } from "marked";
 import type { Block, Section } from "./document";
 import { loadDocument } from "./document";
 
+interface BlockStat {
+  id: string;
+  words: number;
+}
+
 interface PagePayload {
   title: string;
   sectionTitle: string;
@@ -11,8 +16,28 @@ interface PagePayload {
   sectionCount: number;
   pageIndex: number;
   pageCount: number;
+  sectionPageIndex: number;
+  sectionPageCount: number;
   html: string;
   blockIds: string[];
+  blockStats: BlockStat[];
+  wordStats: {
+    totalWords: number;
+    sectionWords: number;
+    pageWords: number;
+    wordsBeforeBookPage: number;
+    wordsBeforeSectionPage: number;
+  };
+}
+
+interface ReadingPage {
+  section: Section;
+  sectionIndex: number;
+  sectionPageIndex: number;
+  blocks: Block[];
+  wordCount: number;
+  wordsBeforeBook: number;
+  wordsBeforeSection: number;
 }
 
 const sourcePath = process.argv[2] ?? "panama.epub";
@@ -23,6 +48,13 @@ marked.use({
   gfm: true,
   breaks: false,
 });
+
+const sectionPages = document.sections.map((section) => pagesFor(section));
+const sectionWordCounts = document.sections.map((section) =>
+  section.blocks.reduce((sum, block) => sum + countWords(block.plainText), 0),
+);
+const readingPages = buildReadingPages();
+const totalWords = sectionWordCounts.reduce((sum, words) => sum + words, 0);
 
 Bun.serve({
   port,
@@ -46,40 +78,89 @@ function documentSummary() {
     title: document.title,
     authors: document.authors,
     sourcePath: document.sourcePath,
+    pageCount: readingPages.length,
+    wordCount: totalWords,
+    estimatedMinutes: minutesForWords(totalWords),
     sections: document.sections.map((section, index) => ({
       id: section.id,
       title: section.title,
       index,
+      firstPageIndex: firstPageIndexForSection(index),
+      pageCount: sectionPages[index]?.length ?? 0,
       blockCount: section.blocks.length,
+      wordCount: sectionWordCounts[index] ?? 0,
     })),
   };
 }
 
 function pageFromUrl(url: URL): PagePayload {
-  const sectionIndex = clamp(
-    Number(url.searchParams.get("section") ?? 0),
-    0,
-    document.sections.length - 1,
-  );
-  const section = document.sections[sectionIndex] ?? document.sections[0];
-  if (!section) throw new Error("Document has no sections.");
-
-  const pages = pagesFor(section);
-  const pageIndex = clamp(Number(url.searchParams.get("page") ?? 0), 0, pages.length - 1);
-  const blocks = pages[pageIndex] ?? [];
+  const requestedPageIndex = url.searchParams.has("page")
+    ? Number(url.searchParams.get("page"))
+    : firstPageIndexForSection(Number(url.searchParams.get("section") ?? 0));
+  const pageIndex = clamp(requestedPageIndex, 0, readingPages.length - 1);
+  const page = readingPages[pageIndex] ?? readingPages[0];
+  if (!page) throw new Error("Document has no pages.");
 
   return {
     title: document.title,
-    sectionTitle: section.title,
-    sectionIndex,
+    sectionTitle: page.section.title,
+    sectionIndex: page.sectionIndex,
     sectionCount: document.sections.length,
     pageIndex,
-    pageCount: pages.length,
-    html: renderBlocks(blocks),
-    blockIds: blocks.map((block) => block.id),
+    pageCount: readingPages.length,
+    sectionPageIndex: page.sectionPageIndex,
+    sectionPageCount: sectionPages[page.sectionIndex]?.length ?? 1,
+    html: renderBlocks(page.blocks),
+    blockIds: page.blocks.map((block) => block.id),
+    blockStats: page.blocks.map((block) => ({ id: block.id, words: countWords(block.plainText) })),
+    wordStats: {
+      totalWords,
+      sectionWords: sectionWordCounts[page.sectionIndex] ?? page.wordCount,
+      pageWords: page.wordCount,
+      wordsBeforeBookPage: page.wordsBeforeBook,
+      wordsBeforeSectionPage: page.wordsBeforeSection,
+    },
   };
 }
 
+function buildReadingPages(): ReadingPage[] {
+  const pages: ReadingPage[] = [];
+  let wordsBeforeBook = 0;
+
+  for (const [sectionIndex, section] of document.sections.entries()) {
+    let wordsBeforeSection = 0;
+    for (const [sectionPageIndex, blocks] of (sectionPages[sectionIndex] ?? []).entries()) {
+      const wordCount = blocks.reduce((sum, block) => sum + countWords(block.plainText), 0);
+      pages.push({
+        section,
+        sectionIndex,
+        sectionPageIndex,
+        blocks,
+        wordCount,
+        wordsBeforeBook,
+        wordsBeforeSection,
+      });
+      wordsBeforeBook += wordCount;
+      wordsBeforeSection += wordCount;
+    }
+  }
+
+  return pages;
+}
+
+function firstPageIndexForSection(sectionIndex: number): number {
+  const target = clamp(sectionIndex, 0, document.sections.length - 1);
+  const index = readingPages.findIndex((page) => page.sectionIndex === target);
+  return index >= 0 ? index : 0;
+}
+
+function countWords(text: string): number {
+  return text.trim().split(/\s+/).filter(Boolean).length;
+}
+
+function minutesForWords(words: number): number {
+  return Math.max(1, Math.ceil(words / 240));
+}
 
 function exploreQuery(url: URL) {
   const query = (url.searchParams.get("q") ?? "").trim();
@@ -245,7 +326,12 @@ function indexHtml(): string {
         </div>
         <div class="progress-card">
           <span id="position">—</span>
-          <div class="meter"><i id="meter"></i></div>
+          <div class="progress-stack" aria-label="Reading progress">
+            <div class="progress-row"><span>book</span><div class="meter"><i id="book-meter"></i></div><b id="book-percent">0%</b></div>
+            <div class="progress-row"><span>section</span><div class="meter"><i id="section-meter"></i></div><b id="section-percent">0%</b></div>
+            <div class="progress-row"><span>page</span><div class="meter"><i id="page-meter"></i></div><b id="page-percent">0%</b></div>
+          </div>
+          <div class="eta" id="eta">estimating time remaining…</div>
         </div>
       </header>
       <section class="reader-shell">
@@ -290,13 +376,19 @@ function indexHtml(): string {
 
 function clientScript(): string {
   return String.raw`
-const state = { section: 0, page: 0, block: 0, pageBlockIds: [], tocOpen: true, summary: null };
+const state = { section: 0, page: 0, block: 0, pageBlockIds: [], currentPage: null, tocOpen: true, summary: null };
 const els = {
   toc: document.getElementById("toc"),
   title: document.getElementById("book-title"),
   sectionTitle: document.getElementById("section-title"),
   position: document.getElementById("position"),
-  meter: document.getElementById("meter"),
+  bookMeter: document.getElementById("book-meter"),
+  sectionMeter: document.getElementById("section-meter"),
+  pageMeter: document.getElementById("page-meter"),
+  bookPercent: document.getElementById("book-percent"),
+  sectionPercent: document.getElementById("section-percent"),
+  pagePercent: document.getElementById("page-percent"),
+  eta: document.getElementById("eta"),
   page: document.getElementById("page"),
   prevSection: document.getElementById("prev-section"),
   nextSection: document.getElementById("next-section"),
@@ -314,12 +406,12 @@ async function boot() {
 }
 
 async function renderPage() {
-  const page = await fetchJson("/api/page?section=" + state.section + "&page=" + state.page);
+  const page = await fetchJson("/api/page?page=" + state.page);
   state.section = page.sectionIndex;
   state.page = page.pageIndex;
+  state.currentPage = page;
   state.pageBlockIds = page.blockIds;
   els.sectionTitle.textContent = page.sectionTitle;
-  els.meter.style.width = Math.round(((page.sectionIndex + page.pageIndex / page.pageCount) / page.sectionCount) * 100) + "%";
   els.page.innerHTML = page.html;
   els.page.querySelectorAll(".weft-block").forEach((block, index) => {
     block.addEventListener("click", () => activateBlock(index));
@@ -343,8 +435,9 @@ function renderToc() {
   els.toc.innerHTML = '<div class="toc-title">Contents</div><div class="toc-list">' + items + '</div>';
   els.toc.querySelectorAll("button").forEach((button) => {
     button.addEventListener("click", async () => {
-      state.section = Number(button.dataset.index);
-      state.page = 0;
+      const section = state.summary.sections[Number(button.dataset.index)];
+      state.section = section.index;
+      state.page = section.firstPageIndex;
       state.block = 0;
       await renderPage();
     });
@@ -357,30 +450,28 @@ async function moveBlock(delta) {
     activateBlock(next);
     return;
   }
-  await movePage(delta > 0 ? 1 : -1, delta < 0, true);
+  await movePage(delta > 0 ? 1 : -1, delta < 0);
 }
 
-async function movePage(delta, end = false, crossSection = false) {
+async function movePage(delta, end = false) {
   const before = state.page;
   state.page += delta;
   state.block = end ? 9999 : 0;
   await renderPage();
-  if (before === state.page && delta > 0) {
-    if (crossSection && state.section < state.summary.sections.length - 1) await moveSection(1);
-    else activateBlock(state.pageBlockIds.length - 1);
-  }
-  if (before === state.page && delta < 0) {
-    if (crossSection && state.section > 0) await moveSection(-1, end);
-    else activateBlock(0);
+  if (before === state.page) {
+    activateBlock(delta > 0 ? state.pageBlockIds.length - 1 : 0);
   }
 }
 
 async function moveSection(delta, end = false) {
-  state.section = Math.max(0, Math.min(state.summary.sections.length - 1, state.section + delta));
-  state.page = end ? 9999 : 0;
+  const targetIndex = Math.max(0, Math.min(state.summary.sections.length - 1, state.section + delta));
+  const section = state.summary.sections[targetIndex];
+  state.section = targetIndex;
+  state.page = section.firstPageIndex + (end ? Math.max(0, section.pageCount - 1) : 0);
   state.block = end ? 9999 : 0;
   await renderPage();
 }
+
 
 function activateBlock(index, scroll = true) {
   state.block = clampIndex(index, state.pageBlockIds.length);
@@ -388,9 +479,49 @@ function activateBlock(index, scroll = true) {
   blocks.forEach((block, blockIndex) => block.classList.toggle("active", blockIndex === state.block));
   const active = blocks[state.block];
   const blockId = state.pageBlockIds[state.block] || "—";
-  els.position.textContent = "section " + (state.section + 1) + "/" + state.summary.sections.length + " · page " + (state.page + 1) + " · block " + blockId;
+  els.position.textContent = "page " + (state.page + 1) + "/" + state.currentPage.pageCount + " · section " + (state.section + 1) + "/" + state.summary.sections.length + " · block " + blockId;
+  updateProgress();
   if (active && document.activeElement !== active) active.focus({ preventScroll: true });
   if (scroll && active) active.scrollIntoView({ block: "center", behavior: "smooth" });
+}
+
+function updateProgress() {
+  if (!state.currentPage) return;
+  const stats = state.currentPage.wordStats;
+  const wordsBeforeBlock = state.currentPage.blockStats
+    .slice(0, state.block)
+    .reduce((sum, block) => sum + block.words, 0);
+  const bookRead = stats.wordsBeforeBookPage + wordsBeforeBlock;
+  const sectionRead = stats.wordsBeforeSectionPage + wordsBeforeBlock;
+  const pageRead = wordsBeforeBlock;
+  const bookProgress = ratio(bookRead, stats.totalWords);
+  const sectionProgress = ratio(sectionRead, stats.sectionWords);
+  const pageProgress = ratio(pageRead, stats.pageWords);
+  setProgress(els.bookMeter, els.bookPercent, bookProgress);
+  setProgress(els.sectionMeter, els.sectionPercent, sectionProgress);
+  setProgress(els.pageMeter, els.pagePercent, pageProgress);
+  els.eta.textContent = "≈ " + formatMinutes(Math.ceil((stats.totalWords - bookRead) / 240)) + " left in book · " +
+    formatMinutes(Math.ceil((stats.sectionWords - sectionRead) / 240)) + " in section · " +
+    formatMinutes(Math.ceil((stats.pageWords - pageRead) / 240)) + " on page";
+}
+
+function setProgress(meter, label, value) {
+  const pct = Math.round(value * 100);
+  meter.style.transform = "scaleX(" + value + ")";
+  label.textContent = pct + "%";
+}
+
+function ratio(value, total) {
+  if (!total || total <= 0) return 0;
+  return Math.max(0, Math.min(value / total, 1));
+}
+
+function formatMinutes(minutes) {
+  if (minutes <= 1) return "1m";
+  if (minutes < 60) return minutes + "m";
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest ? hours + "h " + rest + "m" : hours + "h";
 }
 
 function clampIndex(index, length) {
@@ -413,6 +544,33 @@ function escapeHtml(value) {
   return value.replace(/[&<>\"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '\"': "&quot;" }[char]));
 }
 
+async function runRlm(query) {
+  els.rlmStats.textContent = "exploring…";
+  els.rlmTimeline.innerHTML = "";
+  const result = await fetchJson("/api/rlm?q=" + encodeURIComponent(query));
+  els.rlmStats.textContent = Math.round(result.coverage * 10000) / 100 + "% explored · " + result.charsRead.toLocaleString() + " / " + result.totalChars.toLocaleString() + " chars read";
+  els.rlmTimeline.innerHTML = result.slices.map((slice, index) => {
+    return '<button class="rlm-slice" data-section="' + slice.sectionIndex + '">' +
+      '<span class="rlm-index">' + String(index + 1).padStart(2, "0") + '</span>' +
+      '<div><strong>' + escapeHtml(slice.tool) + '</strong><h3>' + escapeHtml(slice.title) + '</h3><pre>' + escapeHtml(slice.content) + '</pre></div>' +
+      '</button>';
+  }).join("");
+  els.rlmTimeline.querySelectorAll(".rlm-slice").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const section = state.summary.sections[Number(button.dataset.section)];
+      state.section = section.index;
+      state.page = section.firstPageIndex;
+      state.block = 0;
+      await renderPage();
+    });
+  });
+}
+
+els.rlmForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  runRlm(els.rlmQuery.value.trim());
+});
+
 els.prevSection.addEventListener("click", () => moveSection(-1));
 els.nextSection.addEventListener("click", () => moveSection(1));
 window.addEventListener("keydown", (event) => {
@@ -424,7 +582,7 @@ window.addEventListener("keydown", (event) => {
   if (event.key === "h") { event.preventDefault(); moveSection(-1); }
   if (event.key === "l") { event.preventDefault(); moveSection(1); }
   if (event.key === "g") { event.preventDefault(); state.section = 0; state.page = 0; state.block = 0; renderPage(); }
-  if (event.key === "G") { event.preventDefault(); state.section = state.summary.sections.length - 1; state.page = 9999; state.block = 9999; renderPage(); }
+  if (event.key === "G") { event.preventDefault(); state.section = state.summary.sections.length - 1; state.page = state.summary.pageCount - 1; state.block = 9999; renderPage(); }
   if (event.key === "t") { event.preventDefault(); toggleToc(); }
 });
 
@@ -544,8 +702,32 @@ h1 { margin: 0; font-size: clamp(1.6rem, 3vw, 3.4rem); letter-spacing: -0.05em; 
   color: var(--muted);
   font-size: 0.85rem;
 }
-.meter { height: 0.42rem; margin-top: 0.65rem; border-radius: 999px; background: rgba(255,255,255,0.08); overflow: hidden; }
-.meter i { display: block; height: 100%; width: 0%; border-radius: inherit; background: linear-gradient(90deg, var(--cyan), var(--blue)); transition: width 180ms ease; }
+.progress-stack { display: grid; gap: 0.46rem; margin-top: 0.7rem; }
+.progress-row {
+  display: grid;
+  grid-template-columns: 3.6rem minmax(6rem, 1fr) 2.6rem;
+  gap: 0.55rem;
+  align-items: center;
+  font: 0.72rem/1 var(--font-mono);
+  color: var(--dim);
+}
+.progress-row b { color: var(--muted); font-weight: 500; text-align: right; font-variant-numeric: tabular-nums; }
+.meter { height: 0.34rem; border-radius: 999px; background: rgba(255,255,255,0.08); overflow: hidden; }
+.meter i {
+  display: block;
+  height: 100%;
+  width: 100%;
+  transform: scaleX(0);
+  transform-origin: left center;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--cyan), var(--blue));
+  transition: transform 180ms ease;
+}
+.eta {
+  margin-top: 0.72rem;
+  color: var(--muted);
+  font: 0.74rem/1.45 var(--font-mono);
+}
 .reader-shell {
   border: 1px solid var(--border);
   border-radius: 1.6rem;
