@@ -1,10 +1,16 @@
 # weft 🪢
 
-A vim-like terminal reader to chat with your books
+A vim-like, AI-native terminal reader for books and documents.
+
+Weft starts with EPUBs today: it converts chapters into Markdown-like text, renders them in a fast Bun-powered terminal reader, and lets you navigate with keyboard-first controls.
+
+The next direction is bigger: EPUB/PDF/Markdown in → snappy Markdown reading surface → durable highlights/comments → AI tools that understand the book, your current location, and where they looked.
 
 <https://x.com/dpunjabi/status/1854361314040446995>
 
-## Features
+See [`docs/WEFT_REBOOT.md`](docs/WEFT_REBOOT.md) for the reboot plan.
+
+## Current features
 
 ### Vim-like navigation
 
@@ -13,66 +19,47 @@ A vim-like terminal reader to chat with your books
 - Jump to start/end: `g`/`G`
 - See table of contents: `t`
 
-### Chat with your books
+### AI-native direction
 
-- `a` - Chat with your current text
-- `s` - Generate summary
-- `r` - Listen text
-- `>` - Listen to the compass
+The original Python prototype can chat, summarize, and read aloud. The Bun reboot is rebuilding that on top of a stronger document model first, so AI can operate over chapters, blocks, source spans, annotations, and search results instead of only the current page.
 
-Uses [LLM](https://github.com/simonw/llm) to interface with OpenAI, Anthropic, and other providers. You can also install [plugins](https://llm.datasette.io/en/stable/other-models.html) to run local models on your machine.
+## Reboot direction
+
+Weft should stay small and sharp, but grow a real document spine:
+
+- **Normalized document model** — chapters, sections, blocks, and source spans instead of raw strings
+- **Stable annotations** — highlights/comments in a sidecar file that can later export to Markdown
+- **Reader-native AI tools** — `toc`, `current_location`, `get_section`, `search_text`, and eventually `repl_exec` over book blocks
+- **Visible AI navigation** — show the reader what the model inspected, inspired by `recrsv`'s long-document exploration
+- **Recrsv-style exploration rail** — web preview includes `toc`, `search_text`, and `context_get` slices so you can watch document tools move through the book
+- **Global reading tape** — `d/u` turns pages across the book, `h/l` jumps sections, and `j/k` moves through actual passages/blocks
+- **Minimal reading tracker** — book / section / page progress plus quiet estimated time remaining
 
 ## Getting started
 
-Clone this repo and setup & activate venv using either [uv](https://github.com/astral-sh/uv) (recommended)
+Install dependencies with Bun:
 
 ```bash
-uv venv
-source .venv/bin/activate
+bun install
 ```
 
-Or, standard Python tools:
+Open the modern Markdown reader preview:
 
 ```bash
-python3 -m pip install virtualenv
-python3 -m virtualenv .venv
-source .venv/bin/activate
+bun run web path/to/book.epub
+# then open http://localhost:4173
 ```
 
-Install dependencies with:
+You can also point Weft at Gutenberg HTML URLs. Source page anchors like `#Page_100` are preserved and used as source-page coordinates:
 
 ```bash
-uv pip install -r requirements.txt # if using `uv` - faster!
-# or
-pip install -r requirements.txt
+bun run web 'https://www.gutenberg.org/files/56852/56852-h/56852-h.htm#Page_100'
 ```
 
-Bring your keys from OpenAI (default):
+Or use the minimal terminal reader:
 
 ```bash
-llm keys set OPENAI_API_KEY
+bun run read path/to/book.epub
 ```
 
-Or use Anthropic's Claude:
-
-```bash
-llm install llm-claude-3
-llm keys set ANTHROPIC_API_KEY
-llm models default claude-3-5-sonnet-latest
-```
-
-Or, install a local model and run it on your machine:
-
-```bash
-llm install llm-gpt4all
-llm models list # shows a list of available models
-llm -m orca-mini-3b-gguf2-q4_0 '3 names for a pet cow' # tests the orca model locally (and downloads it first if needed)
-```
-
-## Try it!
-
-Get a book from [Project Gutenberg](https://www.gutenberg.org/) and try it out:
-
-```bash
-uv run reader.py path/to/book.epub
-```
+For now, the original Python prototype remains in `reader.py` as a reference implementation for chat/TTS experiments. The reboot path is Bun + TypeScript under `src/`.
